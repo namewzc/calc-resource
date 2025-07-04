@@ -86,4 +86,7 @@ project-calc-resource/
   - 已修正 `nginx.conf`，如有特殊需求请自行调整。
 
 ## 联系方式
-如有问题或建议，请通过 GitHub Issue 提交。 
+如有问题或建议，请通过 GitHub Issue 提交。
+
+## 演示
+![演示](./images/show.gif)

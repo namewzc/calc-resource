@@ -5,7 +5,8 @@ import {
   Typography,
   Paper,
   Box,
-  Alert
+  Alert,
+  Snackbar
 } from '@mui/material';
 import {
   calculateSPECjbb2005,
@@ -17,12 +18,27 @@ import {
 const STORAGE_KEY = 'specjbbCalculatorData';
 
 export default function SPECjbbCalculator({ onResultChange }) {
+  const [showSaveNotification, setShowSaveNotification] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [inputs, setInputs] = useState(() => {
     // 从localStorage读取初始数据
     const savedData = localStorage.getItem(STORAGE_KEY);
-    return savedData ? JSON.parse(savedData) : {
+    console.log('SPECjbb2005 - 读取localStorage数据:', savedData);
+    if (savedData) {
+      const parsedData = JSON.parse(savedData);
+      console.log('SPECjbb2005 - 解析后的数据:', parsedData);
+      // 如果 peakConcurrencyRate 是小数形式（如0.001），转换为百分比形式（如0.1）
+      if (parsedData.peakConcurrencyRate && parsedData.peakConcurrencyRate < 1) {
+        console.log('SPECjbb2005 - 转换小数为百分比:', parsedData.peakConcurrencyRate, '->', parsedData.peakConcurrencyRate * 100);
+        parsedData.peakConcurrencyRate = parsedData.peakConcurrencyRate * 100;
+      }
+      console.log('SPECjbb2005 - 最终使用的数据:', parsedData);
+      return parsedData;
+    }
+    console.log('SPECjbb2005 - 使用默认数据');
+    return {
       totalUsers: 158200, // 系统用户数
-      peakConcurrencyRate: 0.001, // 峰值系统并发率（0.1%）
+      peakConcurrencyRate: 0.1, // 峰值系统并发率（显示0.1，实际计算用0.001）
       tasksPerConcurrentUser: 2, // 每个并发产生的任务数
       
       // 业务交易量计算参数
@@ -46,7 +62,7 @@ export default function SPECjbbCalculator({ onResultChange }) {
 
   // 计算峰值并发用户数
   const calculatePeakConcurrentUsers = () => {
-    return inputs.totalUsers * inputs.peakConcurrencyRate;
+    return inputs.totalUsers * (inputs.peakConcurrencyRate / 100); // 将百分比值转换为小数
   };
 
   // 计算每秒并发要处理的业务量
@@ -55,9 +71,27 @@ export default function SPECjbbCalculator({ onResultChange }) {
     return peakConcurrentUsers * inputs.tasksPerConcurrentUser;
   };
 
+  // 保存数据到localStorage的函数
+  const saveToLocalStorage = (data) => {
+    console.log('SPECjbb2005 - 保存数据到localStorage:', data);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    setShowSaveNotification(true);
+  };
+
   useEffect(() => {
-    // 保存到localStorage
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(inputs));
+    // 首次加载时不保存数据，避免覆盖localStorage
+    if (!isInitialized) {
+      setIsInitialized(true);
+      console.log('SPECjbb2005 - 首次初始化，跳过保存');
+    } else {
+      // 检查数据是否真的变化了
+      const savedData = localStorage.getItem(STORAGE_KEY);
+      const currentData = JSON.stringify(inputs);
+      
+      if (savedData !== currentData) {
+        saveToLocalStorage(inputs);
+      }
+    }
 
     const peakConcurrentTransactions = calculatePeakConcurrentTransactions();
     
@@ -93,7 +127,14 @@ export default function SPECjbbCalculator({ onResultChange }) {
     };
 
     onResultChange(finalResult);
-  }, [inputs, onResultChange]);
+  }, [inputs]);
+
+  const handleCloseNotification = (event, reason) => {
+    if (reason === 'clickaway') {
+      return;
+    }
+    setShowSaveNotification(false);
+  };
 
   const generateExplanation = (transactionsPerSecond, specjbbResult, appServerCores, params) => {
     const peakConcurrentUsers = calculatePeakConcurrentUsers();
@@ -111,8 +152,8 @@ D：非Java应用所占用的系统资源百分比。
 计算过程：
 1. 并发用户计算：
    - 系统用户数：${params.totalUsers}人
-   - 峰值系统并发率：${(params.peakConcurrencyRate * 100).toFixed(3)}%
-   - 峰值并发用户数 = ${params.totalUsers} × ${(params.peakConcurrencyRate * 100).toFixed(3)}% = ${peakConcurrentUsers.toFixed(1)}人
+   - 峰值系统并发率：${params.peakConcurrencyRate}%
+   - 峰值并发用户数 = ${params.totalUsers} × ${(params.peakConcurrencyRate/100).toFixed(4)} = ${peakConcurrentUsers.toFixed(1)}人
    - 每个并发产生的任务数：${params.tasksPerConcurrentUser}个
    - 每秒并发要处理的业务量 = ${peakConcurrentUsers.toFixed(1)} × ${params.tasksPerConcurrentUser} = ${peakConcurrentTransactions.toFixed(1)}
 
@@ -202,12 +243,17 @@ D：非Java应用所占用的系统资源百分比。
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="峰值系统并发率"
+                  label="峰值系统并发率百分比(%)，例如0.1表示0.1%"
                   name="peakConcurrencyRate"
                   type="number"
+                  inputProps={{
+                    step: "0.1",
+                    min: "0",
+                    max: "100"
+                  }}
                   value={inputs.peakConcurrencyRate}
                   onChange={handleInputChange}
-                  helperText="0-1之间的小数，例如0.001表示0.1%"
+                  helperText="输入百分比值，例如0.1表示0.1%"
                 />
               </Grid>
               <Grid item xs={12}>
@@ -315,6 +361,17 @@ D：非Java应用所占用的系统资源百分比。
           </Alert>
         </Box>
       )}
+
+      <Snackbar
+        open={showSaveNotification}
+        autoHideDuration={2000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert onClose={handleCloseNotification} severity="success" sx={{ width: '100%' }}>
+          数据已自动保存
+        </Alert>
+      </Snackbar>
     </Box>
   );
 } 
