@@ -1,0 +1,54 @@
+{
+  "name": "project-calc-resource",
+  "version": "1.0.0",
+  "private": true,
+  "homepage": "/calc-resource",
+  "description": "A tool for project resource calculation and documentation generation",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "client": "react-scripts start",
+    "build": "react-scripts build"
+  },
+  "keywords": [
+    "resource",
+    "calculation",
+    "project",
+    "documentation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "docx": "^8.5.0",
+    "xlsx": "^0.18.5",
+    "joi": "^17.12.1",
+    "winston": "^3.11.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "@mui/material": "^5.15.11",
+    "@mui/icons-material": "^5.15.11",
+    "@emotion/react": "^11.11.3",
+    "@emotion/styled": "^11.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3",
+    "jest": "^29.7.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+} 
