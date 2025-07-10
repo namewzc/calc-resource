@@ -14,13 +14,31 @@ import {
   Typography,
   Snackbar,
   Alert,
-  Divider
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  Chip,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import SaveIcon from '@mui/icons-material/Save';
+import ListIcon from '@mui/icons-material/List';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import LoadIcon from '@mui/icons-material/CloudDownload';
 
 const STORAGE_KEY = 'serverResourcesData';
+const SAVED_CONFIGS_KEY = 'serverResourcesSavedConfigs';
+const MAX_SAVED_CONFIGS = 50;
 
 const defaultRow = {
   serverName: '',
@@ -42,6 +60,16 @@ export default function ServerResources() {
 
   const [showSaveNotification, setShowSaveNotification] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  
+  // 新增状态管理
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [configListDialogOpen, setConfigListDialogOpen] = useState(false);
+  const [configName, setConfigName] = useState('');
+  const [savedConfigs, setSavedConfigs] = useState(() => {
+    const saved = localStorage.getItem(SAVED_CONFIGS_KEY);
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // 计算总计
   const calculateTotals = () => {
@@ -174,20 +202,102 @@ ${serverDetails}
     });
   };
 
+  // 保存当前配置
+  const saveCurrentConfig = () => {
+    if (!configName.trim()) {
+      alert('请输入配置名称');
+      return;
+    }
+
+    if (rows.length === 1 && !rows[0].serverName) {
+      alert('请至少添加一个服务器配置');
+      return;
+    }
+
+    const config = {
+      id: Date.now().toString(),
+      name: configName.trim(),
+      timestamp: new Date().toLocaleString(),
+      data: rows.filter(row => row.serverName), // 只保存有名称的服务器
+      totals: calculateTotals()
+    };
+
+    let newSavedConfigs = [...savedConfigs];
+    
+    // 检查是否超过最大数量
+    if (newSavedConfigs.length >= MAX_SAVED_CONFIGS) {
+      // 删除最旧的配置
+      newSavedConfigs = newSavedConfigs.slice(1);
+    }
+    
+    newSavedConfigs.push(config);
+    
+    setSavedConfigs(newSavedConfigs);
+    localStorage.setItem(SAVED_CONFIGS_KEY, JSON.stringify(newSavedConfigs));
+    
+    setSaveDialogOpen(false);
+    setConfigName('');
+    setSaveSuccess(true);
+  };
+
+  // 加载配置
+  const loadConfig = (config) => {
+    setRows(config.data.length ? config.data : [{ ...defaultRow }]);
+    setConfigListDialogOpen(false);
+  };
+
+  // 删除已保存的配置
+  const deleteSavedConfig = (configId) => {
+    if (window.confirm('确定要删除这个配置吗？')) {
+      const newSavedConfigs = savedConfigs.filter(config => config.id !== configId);
+      setSavedConfigs(newSavedConfigs);
+      localStorage.setItem(SAVED_CONFIGS_KEY, JSON.stringify(newSavedConfigs));
+    }
+  };
+
+  // 打开保存对话框
+  const openSaveDialog = () => {
+    setConfigName('');
+    setSaveDialogOpen(true);
+  };
+
+  // 打开配置列表对话框
+  const openConfigListDialog = () => {
+    setConfigListDialogOpen(true);
+  };
+
   return (
     <Box>
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h6">
           服务器资源配置
         </Typography>
-        <Button
-          variant="outlined"
-          color="error"
-          size="small"
-          onClick={clearAllData}
-        >
-          清除所有数据
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="contained"
+            startIcon={<SaveIcon />}
+            size="small"
+            onClick={openSaveDialog}
+          >
+            保存配置
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<ListIcon />}
+            size="small"
+            onClick={openConfigListDialog}
+          >
+            配置列表 ({savedConfigs.length})
+          </Button>
+          <Button
+            variant="outlined"
+            color="error"
+            size="small"
+            onClick={clearAllData}
+          >
+            清除所有数据
+          </Button>
+        </Box>
       </Box>
       
       <TableContainer component={Paper}>
@@ -401,6 +511,122 @@ ${serverDetails}
         </Typography>
       </Paper>
 
+      {/* 保存配置对话框 */}
+      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>保存当前配置</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="配置名称"
+            fullWidth
+            variant="outlined"
+            value={configName}
+            onChange={(e) => setConfigName(e.target.value)}
+            placeholder="请输入配置名称"
+            sx={{ mt: 2 }}
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            当前已保存 {savedConfigs.length} / {MAX_SAVED_CONFIGS} 个配置
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveDialogOpen(false)}>取消</Button>
+          <Button onClick={saveCurrentConfig} variant="contained">
+            保存
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 配置列表对话框 */}
+      <Dialog 
+        open={configListDialogOpen} 
+        onClose={() => setConfigListDialogOpen(false)} 
+        maxWidth="md" 
+        fullWidth
+      >
+        <DialogTitle>已保存的配置列表</DialogTitle>
+        <DialogContent>
+          {savedConfigs.length === 0 ? (
+            <Typography variant="body1" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+              暂无保存的配置
+            </Typography>
+          ) : (
+            <List>
+              {savedConfigs.map((config) => (
+                <Accordion key={config.id} sx={{ mb: 1 }}>
+                  <AccordionSummary
+                    expandIcon={<ExpandMoreIcon />}
+                    aria-controls={`panel-${config.id}-content`}
+                    id={`panel-${config.id}-header`}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="subtitle1">{config.name}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          保存时间: {config.timestamp}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Chip 
+                          label={`${config.data.length} 台服务器`} 
+                          size="small" 
+                          variant="outlined" 
+                        />
+                        <Chip 
+                          label={`${config.totals.cpuCores} 核`} 
+                          size="small" 
+                          variant="outlined" 
+                        />
+                        <Chip 
+                          label={`${config.totals.memory} GB`} 
+                          size="small" 
+                          variant="outlined" 
+                        />
+                      </Box>
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" gutterBottom>
+                        服务器详情:
+                      </Typography>
+                      {config.data.map((server, idx) => (
+                        <Typography key={idx} variant="body2" sx={{ ml: 2, color: 'text.secondary' }}>
+                          • {server.serverName}: {server.cpuCores}核, {server.memory}GB, {server.totalStorage}GB存储
+                        </Typography>
+                      ))}
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<LoadIcon />}
+                        onClick={() => loadConfig(config)}
+                      >
+                        加载配置
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => deleteSavedConfig(config.id)}
+                      >
+                        删除
+                      </Button>
+                    </Box>
+                  </AccordionDetails>
+                </Accordion>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfigListDialogOpen(false)}>关闭</Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar
         open={showSaveNotification}
         autoHideDuration={2000}
@@ -419,6 +645,16 @@ ${serverDetails}
       >
         <Alert onClose={() => setCopySuccess(false)} severity="success" sx={{ width: '100%' }}>
           表格内容已复制，可直接粘贴到 Excel！
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={saveSuccess}
+        autoHideDuration={3000}
+        onClose={() => setSaveSuccess(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setSaveSuccess(false)} severity="success" sx={{ width: '100%' }}>
+          配置已成功保存！
         </Alert>
       </Snackbar>
     </Box>
