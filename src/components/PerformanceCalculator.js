@@ -60,8 +60,8 @@ export default function PerformanceCalculator() {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Paper elevation={3} sx={{ p: 2 }}>
+    <Box sx={{ width: '100%', px: 2, py: 4 }}>
+      <Paper elevation={3} sx={{ p: 3, mx: 'auto', maxWidth: '100%' }}>
         <Typography variant="h4" component="h1" gutterBottom>
           性能测算工具
         </Typography>
@@ -129,6 +129,6 @@ export default function PerformanceCalculator() {
           </Box>
         )}
       </Paper>
-    </Container>
+    </Box>
   );
 } 

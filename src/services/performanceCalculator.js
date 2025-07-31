@@ -56,8 +56,25 @@ export const calculateServerResources = ({
   };
 };
 
-// 基准值配置
-export const BASELINE_SINGLE_CORE = {
-  specjbb: 118501, // 单核心SPECjbb2005基准值
-  tpcc: 80002 // 单核心TPC-C基准值
-}; 
+import benchmarkConfigManager from '../config/benchmarkConfig.js';
+
+// 获取可配置的基准参考值
+export const getBenchmarkReferenceValues = () => {
+  return benchmarkConfigManager.getAllConfigs();
+};
+
+// 获取默认单核心基准值（用于向后兼容）
+export const getBaselineSingleCore = () => {
+  const singleCoreConfig = benchmarkConfigManager.getConfig('singleCore_2_2GHz');
+  return {
+    specjbb: singleCoreConfig?.specjbb || 118501,
+    tpcc: singleCoreConfig?.tpcc || 80002
+  };
+};
+
+// 导出基准配置管理器供外部使用
+export { benchmarkConfigManager };
+
+// 为了向后兼容，保留静态导出
+export const BASELINE_REFERENCE_VALUES = getBenchmarkReferenceValues();
+export const BASELINE_SINGLE_CORE = getBaselineSingleCore();

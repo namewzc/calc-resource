@@ -26,7 +26,10 @@ import {
   Chip,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  Checkbox,
+  Tooltip,
+  TextareaAutosize
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -35,6 +38,9 @@ import SaveIcon from '@mui/icons-material/Save';
 import ListIcon from '@mui/icons-material/List';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LoadIcon from '@mui/icons-material/CloudDownload';
+import ContentPasteIcon from '@mui/icons-material/ContentPaste';
+import SelectAllIcon from '@mui/icons-material/SelectAll';
+import ClearAllIcon from '@mui/icons-material/ClearAll';
 
 const STORAGE_KEY = 'serverResourcesData';
 const SAVED_CONFIGS_KEY = 'serverResourcesSavedConfigs';
@@ -70,6 +76,14 @@ export default function ServerResources() {
     return saved ? JSON.parse(saved) : [];
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
+  
+  // 复制粘贴功能状态
+  const [selectedRows, setSelectedRows] = useState(new Set());
+  const [pasteDialogOpen, setPasteDialogOpen] = useState(false);
+  const [pasteData, setPasteData] = useState('');
+  const [pasteSuccess, setPasteSuccess] = useState(false);
+  const [pasteError, setPasteError] = useState('');
+  const [selectAll, setSelectAll] = useState(false);
 
   // 计算总计
   const calculateTotals = () => {
@@ -266,17 +280,282 @@ ${serverDetails}
     setConfigListDialogOpen(true);
   };
 
+  // 复制粘贴功能方法
+  // 复制单行服务器配置
+  const copySingleRow = (index) => {
+    const row = rows[index];
+    const rowData = {
+      serverName: row.serverName,
+      cpuCores: row.cpuCores,
+      memory: row.memory,
+      os: row.os,
+      systemDisk: row.systemDisk,
+      dataDisk: row.dataDisk,
+      notes: row.notes
+    };
+    const jsonData = JSON.stringify(rowData, null, 2);
+    navigator.clipboard.writeText(jsonData).then(() => {
+      setCopySuccess(true);
+    });
+  };
+
+  // 复制选中的多行配置
+  const copySelectedRows = () => {
+    if (selectedRows.size === 0) {
+      alert('请先选择要复制的行');
+      return;
+    }
+    const selectedData = Array.from(selectedRows).map(index => {
+      const row = rows[index];
+      return {
+        serverName: row.serverName,
+        cpuCores: row.cpuCores,
+        memory: row.memory,
+        os: row.os,
+        systemDisk: row.systemDisk,
+        dataDisk: row.dataDisk,
+        notes: row.notes
+      };
+    });
+    const jsonData = JSON.stringify(selectedData, null, 2);
+    navigator.clipboard.writeText(jsonData).then(() => {
+      setCopySuccess(true);
+    });
+  };
+
+  // 处理行选择
+  const handleRowSelect = (index) => {
+    const newSelected = new Set(selectedRows);
+    if (newSelected.has(index)) {
+      newSelected.delete(index);
+    } else {
+      newSelected.add(index);
+    }
+    setSelectedRows(newSelected);
+    setSelectAll(newSelected.size === rows.length);
+  };
+
+  // 全选/取消全选
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedRows(new Set());
+      setSelectAll(false);
+    } else {
+      setSelectedRows(new Set(rows.map((_, index) => index)));
+      setSelectAll(true);
+    }
+  };
+
+  // 打开粘贴对话框
+  const openPasteDialog = () => {
+    setPasteData('');
+    setPasteError('');
+    setPasteDialogOpen(true);
+  };
+
+  // 解析粘贴数据
+  const parsePasteData = (data) => {
+    try {
+      // 尝试解析JSON格式
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      } else if (typeof parsed === 'object') {
+        return [parsed];
+      }
+    } catch (e) {
+      // 如果不是JSON，尝试解析表格格式（制表符分隔）
+      const lines = data.trim().split('\n');
+      if (lines.length > 1) {
+        const headers = lines[0].split('\t');
+        const dataRows = lines.slice(1).map(line => {
+          const values = line.split('\t');
+          const row = { ...defaultRow };
+          
+          // 根据表头映射数据
+          headers.forEach((header, index) => {
+            const value = values[index] || '';
+            switch (header.trim()) {
+              case '服务器名称':
+                row.serverName = value;
+                break;
+              case 'CPU核数':
+                row.cpuCores = value;
+                break;
+              case '内存(GB)':
+                row.memory = value;
+                break;
+              case '操作系统':
+                row.os = value;
+                break;
+              case '系统盘(GB)':
+                row.systemDisk = value;
+                break;
+              case '数据盘(GB)':
+                row.dataDisk = value;
+                break;
+              case '备注':
+                row.notes = value;
+                break;
+            }
+          });
+          return row;
+        });
+        return dataRows.filter(row => row.serverName); // 过滤掉没有服务器名称的行
+      }
+    }
+    throw new Error('无法解析数据格式');
+  };
+
+  // 执行粘贴操作
+  const handlePaste = () => {
+    if (!pasteData.trim()) {
+      setPasteError('请输入要粘贴的数据');
+      return;
+    }
+
+    try {
+      const parsedData = parsePasteData(pasteData);
+      if (parsedData.length === 0) {
+        setPasteError('没有找到有效的服务器配置数据');
+        return;
+      }
+
+      // 验证数据格式
+      const validData = parsedData.map(item => ({
+        serverName: item.serverName || '',
+        cpuCores: item.cpuCores || '',
+        memory: item.memory || '',
+        os: item.os || '',
+        systemDisk: item.systemDisk || '',
+        dataDisk: item.dataDisk || '',
+        totalStorage: '',
+        notes: item.notes || ''
+      }));
+
+      // 添加到现有数据中
+      const newRows = [...rows];
+      // 如果当前只有一个空行，替换它
+      if (newRows.length === 1 && !newRows[0].serverName) {
+        newRows.splice(0, 1, ...validData);
+      } else {
+        newRows.push(...validData);
+      }
+
+      setRows(newRows);
+      setPasteDialogOpen(false);
+      setPasteSuccess(true);
+      setPasteData('');
+      setPasteError('');
+    } catch (error) {
+      setPasteError(error.message || '数据格式错误，请检查输入格式');
+    }
+  };
+
+  // 快速粘贴功能 - 直接从剪贴板读取并添加一行
+  const handleQuickPaste = async () => {
+    try {
+      // 从剪贴板读取数据
+      const clipboardData = await navigator.clipboard.readText();
+      if (!clipboardData.trim()) {
+        alert('剪贴板为空，请先复制服务器配置数据');
+        return;
+      }
+
+      // 解析剪贴板数据
+      const parsedData = parsePasteData(clipboardData);
+      if (parsedData.length === 0) {
+        alert('剪贴板中没有找到有效的服务器配置数据');
+        return;
+      }
+
+      // 验证数据格式
+      const validData = parsedData.map(item => ({
+        serverName: item.serverName || '',
+        cpuCores: item.cpuCores || '',
+        memory: item.memory || '',
+        os: item.os || '',
+        systemDisk: item.systemDisk || '',
+        dataDisk: item.dataDisk || '',
+        totalStorage: '',
+        notes: item.notes || ''
+      }));
+
+      // 添加到现有数据中
+      const newRows = [...rows];
+      // 如果当前只有一个空行，替换它
+      if (newRows.length === 1 && !newRows[0].serverName) {
+        newRows.splice(0, 1, ...validData);
+      } else {
+        newRows.push(...validData);
+      }
+
+      setRows(newRows);
+      setPasteSuccess(true);
+    } catch (error) {
+      console.error('快速粘贴失败:', error);
+      if (error.name === 'NotAllowedError') {
+        alert('无法访问剪贴板，请使用"粘贴数据"按钮手动粘贴');
+      } else {
+        alert('粘贴失败：' + (error.message || '数据格式错误'));
+      }
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h6">
           服务器资源配置
         </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            onClick={addRow}
+          >
+            添加服务器
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<ContentCopyIcon />}
+            onClick={handleCopyTable}
+          >
+            复制表格
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<ContentCopyIcon />}
+            onClick={copySelectedRows}
+            disabled={selectedRows.size === 0}
+          >
+            复制选中({selectedRows.size})
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<ContentPasteIcon />}
+            onClick={openPasteDialog}
+          >
+            粘贴数据
+          </Button>
           <Button
             variant="contained"
+            startIcon={<ContentPasteIcon />}
+            onClick={handleQuickPaste}
+            color="primary"
+          >
+            快速粘贴
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={selectAll ? <ClearAllIcon /> : <SelectAllIcon />}
+            onClick={handleSelectAll}
+          >
+            {selectAll ? '取消全选' : '全选'}
+          </Button>
+          <Button
+            variant="outlined"
             startIcon={<SaveIcon />}
-            size="small"
             onClick={openSaveDialog}
           >
             保存配置
@@ -284,40 +563,51 @@ ${serverDetails}
           <Button
             variant="outlined"
             startIcon={<ListIcon />}
-            size="small"
             onClick={openConfigListDialog}
           >
-            配置列表 ({savedConfigs.length})
+            加载配置
           </Button>
           <Button
             variant="outlined"
             color="error"
-            size="small"
             onClick={clearAllData}
           >
-            清除所有数据
+            清空数据
           </Button>
         </Box>
       </Box>
       
-      <TableContainer component={Paper}>
-        <Table size="small">
+      <TableContainer component={Paper} sx={{ width: '100%', overflowX: 'auto' }}>
+        <Table size="small" sx={{ minWidth: 1200 }}>
           <TableHead>
             <TableRow>
-              <TableCell>服务器名称</TableCell>
-              <TableCell align="right">CPU核数</TableCell>
-              <TableCell align="right">内存(GB)</TableCell>
-              <TableCell>操作系统</TableCell>
-              <TableCell align="right">系统盘(GB)</TableCell>
-              <TableCell align="right">数据盘(GB)</TableCell>
-              <TableCell align="right">总存储(GB)</TableCell>
-              <TableCell>备注</TableCell>
-              <TableCell align="center">操作</TableCell>
+              <TableCell padding="checkbox">
+                <Checkbox
+                  checked={selectAll}
+                  onChange={handleSelectAll}
+                  indeterminate={selectedRows.size > 0 && selectedRows.size < rows.length}
+                />
+              </TableCell>
+              <TableCell sx={{ minWidth: 200 }}>服务器名称</TableCell>
+              <TableCell align="right" sx={{ minWidth: 120 }}>CPU核数</TableCell>
+              <TableCell align="right" sx={{ minWidth: 120 }}>内存(GB)</TableCell>
+              <TableCell sx={{ minWidth: 150 }}>操作系统</TableCell>
+              <TableCell align="right" sx={{ minWidth: 120 }}>系统盘(GB)</TableCell>
+              <TableCell align="right" sx={{ minWidth: 120 }}>数据盘(GB)</TableCell>
+              <TableCell align="right" sx={{ minWidth: 120 }}>总存储(GB)</TableCell>
+              <TableCell sx={{ minWidth: 200 }}>备注</TableCell>
+              <TableCell align="center" sx={{ minWidth: 120 }}>操作</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {rows.map((row, index) => (
-              <TableRow key={index}>
+              <TableRow key={index} selected={selectedRows.has(index)}>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    checked={selectedRows.has(index)}
+                    onChange={() => handleRowSelect(index)}
+                  />
+                </TableCell>
                 <TableCell>
                   <TextField
                     size="small"
@@ -388,18 +678,31 @@ ${serverDetails}
                   />
                 </TableCell>
                 <TableCell align="center">
-                  <IconButton 
-                    size="small" 
-                    onClick={() => deleteRow(index)}
-                    disabled={rows.length === 1}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+                  <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    <Tooltip title="复制此行">
+                      <IconButton 
+                        size="small" 
+                        onClick={() => copySingleRow(index)}
+                      >
+                        <ContentCopyIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="删除此行">
+                      <IconButton 
+                        size="small" 
+                        onClick={() => deleteRow(index)}
+                        disabled={rows.length === 1}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </TableCell>
               </TableRow>
             ))}
             {/* 总计行 */}
             <TableRow>
+              <TableCell padding="checkbox" />
               <TableCell>
                 <Typography variant="subtitle2">总计</Typography>
               </TableCell>
@@ -627,6 +930,33 @@ ${serverDetails}
         </DialogActions>
       </Dialog>
 
+      {/* 粘贴数据对话框 */}
+      <Dialog open={pasteDialogOpen} onClose={() => setPasteDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>粘贴服务器配置数据</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            支持以下格式：
+            <br />• JSON格式（复制的服务器配置数据）
+            <br />• 表格格式（从Excel复制的制表符分隔数据）
+          </Typography>
+          <TextField
+            multiline
+            rows={10}
+            fullWidth
+            variant="outlined"
+            placeholder="请粘贴服务器配置数据..."
+            value={pasteData}
+            onChange={(e) => setPasteData(e.target.value)}
+            error={!!pasteError}
+            helperText={pasteError}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPasteDialogOpen(false)}>取消</Button>
+          <Button onClick={handlePaste} variant="contained">粘贴</Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar
         open={showSaveNotification}
         autoHideDuration={2000}
@@ -655,6 +985,16 @@ ${serverDetails}
       >
         <Alert onClose={() => setSaveSuccess(false)} severity="success" sx={{ width: '100%' }}>
           配置已成功保存！
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={pasteSuccess}
+        autoHideDuration={3000}
+        onClose={() => setPasteSuccess(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setPasteSuccess(false)} severity="success" sx={{ width: '100%' }}>
+          数据粘贴成功！
         </Alert>
       </Snackbar>
     </Box>
