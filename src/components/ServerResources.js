@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { calculatePerformance } from '../services/performanceCalculator';
+import ClipboardUtils from '../utils/clipboardUtils';
 import {
   Box,
   Paper,
@@ -84,6 +86,10 @@ export default function ServerResources() {
   const [pasteSuccess, setPasteSuccess] = useState(false);
   const [pasteError, setPasteError] = useState('');
   const [selectAll, setSelectAll] = useState(false);
+  
+  // 手动粘贴对话框状态
+  const [manualPasteDialogOpen, setManualPasteDialogOpen] = useState(false);
+  const [manualPasteData, setManualPasteData] = useState('');
 
   // 计算总计
   const calculateTotals = () => {
@@ -209,11 +215,14 @@ ${serverDetails}
     return [headers.join('\t'), ...dataRows, totalRow].join('\n');
   };
 
-  const handleCopyTable = () => {
+  const handleCopyTable = async () => {
     const text = generateTableText();
-    navigator.clipboard.writeText(text).then(() => {
+    const success = await ClipboardUtils.copyText(text);
+    if (success) {
       setCopySuccess(true);
-    });
+    } else {
+      alert('复制失败，请手动选择并复制内容');
+    }
   };
 
   // 保存当前配置
@@ -282,7 +291,7 @@ ${serverDetails}
 
   // 复制粘贴功能方法
   // 复制单行服务器配置
-  const copySingleRow = (index) => {
+  const copySingleRow = async (index) => {
     const row = rows[index];
     const rowData = {
       serverName: row.serverName,
@@ -294,13 +303,16 @@ ${serverDetails}
       notes: row.notes
     };
     const jsonData = JSON.stringify(rowData, null, 2);
-    navigator.clipboard.writeText(jsonData).then(() => {
+    const success = await ClipboardUtils.copyText(jsonData);
+    if (success) {
       setCopySuccess(true);
-    });
+    } else {
+      alert('复制失败，请手动选择并复制内容');
+    }
   };
 
   // 复制选中的多行配置
-  const copySelectedRows = () => {
+  const copySelectedRows = async () => {
     if (selectedRows.size === 0) {
       alert('请先选择要复制的行');
       return;
@@ -318,9 +330,12 @@ ${serverDetails}
       };
     });
     const jsonData = JSON.stringify(selectedData, null, 2);
-    navigator.clipboard.writeText(jsonData).then(() => {
+    const success = await ClipboardUtils.copyText(jsonData);
+    if (success) {
       setCopySuccess(true);
-    });
+    } else {
+      alert('复制失败，请手动选择并复制内容');
+    }
   };
 
   // 处理行选择
@@ -456,9 +471,10 @@ ${serverDetails}
   const handleQuickPaste = async () => {
     try {
       // 从剪贴板读取数据
-      const clipboardData = await navigator.clipboard.readText();
-      if (!clipboardData.trim()) {
-        alert('剪贴板为空，请先复制服务器配置数据');
+      const clipboardData = await ClipboardUtils.readText();
+      if (!clipboardData || !clipboardData.trim()) {
+        // 如果无法读取剪切板，打开手动粘贴对话框
+        setManualPasteDialogOpen(true);
         return;
       }
 
@@ -502,6 +518,52 @@ ${serverDetails}
     }
   };
 
+  // 手动粘贴对话框处理函数
+  const handleManualPaste = () => {
+    if (!manualPasteData.trim()) {
+      alert('请输入要粘贴的数据');
+      return;
+    }
+
+    try {
+      // 解析手动输入的数据
+      const parsedData = parsePasteData(manualPasteData);
+      if (parsedData.length === 0) {
+        alert('没有找到有效的服务器配置数据');
+        return;
+      }
+
+      // 验证数据格式
+      const validData = parsedData.map(item => ({
+        serverName: item.serverName || '',
+        cpuCores: item.cpuCores || '',
+        memory: item.memory || '',
+        os: item.os || '',
+        systemDisk: item.systemDisk || '',
+        dataDisk: item.dataDisk || '',
+        totalStorage: item.totalStorage || '',
+        notes: item.notes || ''
+      }));
+
+      // 添加到现有数据中
+      const newRows = [...rows];
+      // 如果当前只有一个空行，替换它
+      if (newRows.length === 1 && !newRows[0].serverName) {
+        newRows.splice(0, 1, ...validData);
+      } else {
+        newRows.push(...validData);
+      }
+
+      setRows(newRows);
+      setManualPasteDialogOpen(false);
+      setManualPasteData('');
+      setPasteSuccess(true);
+    } catch (error) {
+      console.error('手动粘贴失败:', error);
+      alert('粘贴失败：' + (error.message || '数据格式错误'));
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -530,13 +592,6 @@ ${serverDetails}
             disabled={selectedRows.size === 0}
           >
             复制选中({selectedRows.size})
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<ContentPasteIcon />}
-            onClick={openPasteDialog}
-          >
-            粘贴数据
           </Button>
           <Button
             variant="contained"
@@ -954,6 +1009,39 @@ ${serverDetails}
         <DialogActions>
           <Button onClick={() => setPasteDialogOpen(false)}>取消</Button>
           <Button onClick={handlePaste} variant="contained">粘贴</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 手动粘贴对话框 */}
+      <Dialog open={manualPasteDialogOpen} onClose={() => setManualPasteDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          手动粘贴数据
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            在HTTP环境下无法自动读取剪切板，请手动粘贴数据
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            支持以下格式：
+            <br />• JSON格式（复制的服务器配置数据）
+            <br />• 表格格式（从Excel复制的制表符分隔数据）
+          </Typography>
+          <TextField
+            multiline
+            rows={10}
+            fullWidth
+            variant="outlined"
+            placeholder="请粘贴服务器配置数据..."
+            value={manualPasteData}
+            onChange={(e) => setManualPasteData(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setManualPasteDialogOpen(false);
+            setManualPasteData('');
+          }}>取消</Button>
+          <Button onClick={handleManualPaste} variant="contained">粘贴</Button>
         </DialogActions>
       </Dialog>
 
